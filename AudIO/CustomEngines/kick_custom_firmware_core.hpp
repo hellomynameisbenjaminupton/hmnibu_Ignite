@@ -10,3 +10,4 @@
 #include "ignite_internal_synth.hpp"
 
 #endif // KICK_CUSTOM_FIRMWARE_CORE_HPP
+

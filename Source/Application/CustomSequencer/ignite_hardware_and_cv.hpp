@@ -680,3 +680,4 @@ private:
 } // namespace ignite
 
 #endif // IGNITE_HARDWARE_AND_CV_HPP
+

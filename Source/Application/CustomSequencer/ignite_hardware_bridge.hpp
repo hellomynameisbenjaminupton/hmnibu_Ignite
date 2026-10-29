@@ -9,3 +9,4 @@
 #include "ignite_hardware_and_cv.hpp"
 
 #endif // IGNITE_HARDWARE_BRIDGE_HPP
+

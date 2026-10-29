@@ -16,3 +16,4 @@ Save this file as **`GEMINI.md`** (or `docs/IGNITE_BLUEPRINT.md`) in the root of
 | `AudIO/` | Internal audio & General MIDI synth engine | AGPL-3.0-or-later | `AudIO/CustomEngines/` (Ported 4-Op FM, Granular, & 48 kHz CV/Audio DSP) |
 | `ComProtocol/` | Hardware MCU communication protocol (pads, 16 step encoders, knobs A–H, CV DACs) | AGPL-3.0-or-later | `Source/Application/CustomSequencer/ignite_hardware_bridge.hpp` |
 | `Linux/` | Embedded Buildroot Linux image & Wi-Fi stack | GPL-2.0 | Ableton Link / RTP-MIDI daemon & cross-compilation (`aarch64` / `armv7`) |
+

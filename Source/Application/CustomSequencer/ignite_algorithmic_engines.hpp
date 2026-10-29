@@ -627,3 +627,4 @@ private:
 } // namespace ignite
 
 #endif // IGNITE_ALGORITHMIC_ENGINES_HPP
+

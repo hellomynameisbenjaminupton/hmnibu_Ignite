@@ -334,3 +334,4 @@ private:
 } // namespace ignite
 
 #endif // IGNITE_FIRMWARE_APP_HPP
+

@@ -367,3 +367,4 @@ private:
 } // namespace ignite
 
 #endif // IGNITE_INTERNAL_SYNTH_HPP
+
