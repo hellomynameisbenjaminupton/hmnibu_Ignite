@@ -1,0 +1,1175 @@
+<!DOCTYPE html>
+<!--
+  Copyright (c) 2026 Behringer IGNITE (BE 0716-AAF) Custom Firmware Contributors
+  SPDX-License-Identifier: AGPL-3.0-or-later
+
+  Security Architecture Notes:
+  - Strict Content-Security-Policy (CSP) with script/style nonces and zero 'unsafe-inline' / 'unsafe-eval'.
+  - All DOM updates use document.createElement(), textContent, setAttribute(), and replaceChildren().
+    Zero usage of innerHTML, outerHTML, insertAdjacentHTML, or document.write.
+  - TODO(security): Backend authentication (OAuth/MFA/CSRF/cookies), SQL database queries, and file upload
+    antivirus scanning are intentionally omitted as this is a standalone client-side embedded hardware
+    sequencer simulator running entirely in local browser memory via WebAudio and WebMIDI.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'nonce-ignite2026'; style-src 'self' 'nonce-ignite2026'; object-src 'none'; base-uri 'self'; frame-ancestors 'self';">
+  <title>Behringer IGNITE (BE 0716-AAF) — Custom Firmware Hardware Simulator</title>
+  <style nonce="ignite2026">
+    :root {
+      --bg-chassis: #141619;
+      --bg-panel: #1d2025;
+      --bg-screen: #0a0e14;
+      --border-metal: #323842;
+      --accent-orange: #ff6a00;
+      --accent-amber: #ffae00;
+      --accent-cyan: #00f0ff;
+      --accent-green: #00e676;
+      --accent-red: #ff2a4b;
+      --text-main: #eef2f7;
+      --text-muted: #939eae;
+    }
+    * {
+      box-sizing: border-box;
+      user-select: none;
+    }
+    body {
+      margin: 0;
+      padding: 16px;
+      background: #0b0c0e;
+      color: var(--text-main);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .hardware-chassis {
+      width: 100%;
+      max-width: 1440px;
+      background: linear-gradient(180deg, #22262c 0%, #15181c 100%);
+      border: 3px solid #3c424d;
+      border-radius: 14px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .top-header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid var(--border-metal);
+    }
+    .brand-block {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+    .brand-title {
+      font-size: 24px;
+      font-weight: 900;
+      letter-spacing: 2px;
+      color: var(--accent-orange);
+    }
+    .brand-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+      letter-spacing: 1px;
+    }
+    .transport-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .hw-btn {
+      background: #282d35;
+      color: var(--text-main);
+      border: 1px solid #454d59;
+      border-radius: 6px;
+      padding: 7px 13px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.12s ease;
+    }
+    .hw-btn:hover {
+      border-color: var(--accent-amber);
+    }
+    .hw-btn.active {
+      background: var(--accent-orange);
+      color: #0b0c0e;
+      border-color: #ff9d4d;
+      box-shadow: 0 0 12px rgba(255, 106, 0, 0.6);
+    }
+    .hw-btn.active-cyan {
+      background: var(--accent-cyan);
+      color: #091015;
+      border-color: #8cfbff;
+      box-shadow: 0 0 12px rgba(0, 240, 255, 0.6);
+    }
+    .status-pill {
+      background: #0d1015;
+      border: 1px solid #2e3642;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-family: monospace;
+      color: var(--accent-cyan);
+    }
+    .upper-deck {
+      display: grid;
+      grid-template-columns: 1.55fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 1100px) {
+      .upper-deck {
+        grid-template-columns: 1fr;
+      }
+    }
+    .touchscreen-bezel {
+      background: #06080c;
+      border: 3px solid #2f3640;
+      border-radius: 10px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 360px;
+    }
+    .screen-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #1f2836;
+      padding-bottom: 8px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .screen-tabs {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .lane-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .lane-row {
+      display: grid;
+      grid-template-columns: 130px 62px repeat(16, 1fr);
+      gap: 3px;
+      align-items: center;
+      padding: 3px 6px;
+      border-radius: 4px;
+      background: #0f141d;
+      border: 1px solid transparent;
+      cursor: pointer;
+    }
+    .lane-row.selected {
+      border-color: var(--accent-orange);
+      background: #171f2e;
+    }
+    .lane-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+    .lane-len-badge {
+      font-size: 10px;
+      color: var(--accent-amber);
+      font-family: monospace;
+    }
+    .lane-cell {
+      height: 22px;
+      background: #1a2230;
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-family: monospace;
+      color: #c5d1e0;
+      border: 1px solid #253042;
+    }
+    .lane-cell.in-loop {
+      border-color: #364863;
+    }
+    .lane-cell.out-of-loop {
+      opacity: 0.28;
+    }
+    .lane-cell.playhead {
+      border-color: var(--accent-cyan);
+      box-shadow: inset 0 0 6px rgba(0, 240, 255, 0.55);
+    }
+    .lane-cell.gate-on {
+      background: #1f5c3e;
+      color: #fff;
+    }
+    .right-control-deck {
+      background: var(--bg-panel);
+      border: 2px solid var(--border-metal);
+      border-radius: 10px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .section-title {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .macro-knobs-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    .knob-card {
+      background: #14171c;
+      border: 1px solid #2b313b;
+      border-radius: 8px;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+    .knob-title {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--accent-amber);
+      text-align: center;
+    }
+    .knob-value {
+      font-size: 11px;
+      font-family: monospace;
+      color: var(--accent-cyan);
+    }
+    .knob-slider {
+      width: 100%;
+      accent-color: var(--accent-orange);
+      cursor: pointer;
+    }
+    .nav-and-tof-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .tof-pad {
+      background: radial-gradient(circle at center, #142838 0%, #091017 100%);
+      border: 1px solid var(--accent-cyan);
+      border-radius: 8px;
+      height: 92px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: crosshair;
+      padding: 6px;
+      text-align: center;
+    }
+    .cv-meter-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+    .cv-card {
+      background: #11161f;
+      border: 1px solid #263244;
+      border-radius: 6px;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .cv-bar-outer {
+      width: 100%;
+      height: 10px;
+      background: #090c10;
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid #253142;
+    }
+    .cv-bar-inner {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent-cyan), var(--accent-green));
+      width: 50%;
+    }
+    .step-matrix-section {
+      background: var(--bg-panel);
+      border: 2px solid var(--border-metal);
+      border-radius: 10px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .step-columns-16 {
+      display: grid;
+      grid-template-columns: repeat(16, 1fr);
+      gap: 6px;
+    }
+    .step-col {
+      background: #13161a;
+      border: 1px solid #292f38;
+      border-radius: 8px;
+      padding: 6px 4px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .step-enc-input {
+      width: 100%;
+      accent-color: var(--accent-cyan);
+      cursor: pointer;
+    }
+    .step-enc-val {
+      font-size: 10px;
+      font-family: monospace;
+      color: var(--text-muted);
+    }
+    .rgb-step-pad {
+      width: 100%;
+      height: 46px;
+      border-radius: 6px;
+      border: 2px solid #38404d;
+      background: #1b1f26;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.06s ease;
+    }
+    .rgb-step-pad:active {
+      transform: scale(0.95);
+    }
+    .rgb-step-pad.gate-active {
+      background: #1b8a4b;
+      border-color: #4eff9b;
+      box-shadow: 0 0 12px rgba(0, 230, 118, 0.55);
+    }
+    .rgb-step-pad.euc-auto {
+      background: #c96800;
+      border-color: #ffc400;
+      box-shadow: 0 0 12px rgba(255, 174, 0, 0.55);
+    }
+    .rgb-step-pad.euc-forced-on {
+      background: #008c9e;
+      border-color: #00f0ff;
+      box-shadow: 0 0 14px rgba(0, 240, 255, 0.8);
+    }
+    .rgb-step-pad.euc-forced-mute {
+      background: #4d0d17;
+      border-color: #ff2a4b;
+      color: #ff9aa8;
+    }
+    .rgb-step-pad.current-playhead {
+      outline: 2px solid #ffffff;
+      outline-offset: 2px;
+    }
+    .info-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .info-box {
+      background: #10151f;
+      border: 1px solid #243044;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    select.hw-select {
+      background: #1c222b;
+      color: var(--text-main);
+      border: 1px solid #434d5e;
+      border-radius: 5px;
+      padding: 5px 8px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="hardware-chassis">
+    <!-- Top Header & Transport -->
+    <div class="top-header-bar">
+      <div class="brand-block">
+        <span class="brand-title">BEHRINGER IGNITE</span>
+        <span class="brand-sub">BE 0716-AAF • 64-TRACK CUSTOM FIRMWARE SIMULATOR (960 PPQN)</span>
+      </div>
+      <div class="transport-bar">
+        <button id="btnPlayStop" class="hw-btn">▶ PLAY / STOP</button>
+        <button id="btnHoldBar" class="hw-btn" title="Hold BAR + press Step 1-16 to set active lane loop length">HOLD [BAR] SET LEN</button>
+        <label style="font-size:12px;">Track:
+          <select id="selTrack" class="hw-select"></select>
+        </label>
+        <label style="font-size:12px;">Synth Patch:
+          <select id="selPatch" class="hw-select">
+            <option value="fm4">4-Op FM (KICK Port)</option>
+            <option value="drum">KICK Analog Drum</option>
+            <option value="granular">Granular Cloud</option>
+          </select>
+        </label>
+        <label style="font-size:12px;">Follow Mode:
+          <select id="selFollowMode" class="hw-select">
+            <option value="0">Off</option>
+            <option value="1">ScaleQuantize</option>
+            <option value="2" selected>ChordToneLock</option>
+            <option value="3">BassRootFollow</option>
+            <option value="4">VoiceLedPad</option>
+          </select>
+        </label>
+        <span id="statusClock" class="status-pill">TICK: 0 | BAR: 1.1 | BPM: 120.0</span>
+      </div>
+    </div>
+
+    <!-- Upper Deck: Touchscreen + Right Hardware Controls -->
+    <div class="upper-deck">
+      <!-- Interactive Touchscreen -->
+      <div class="touchscreen-bezel">
+        <div class="screen-topbar">
+          <div class="screen-tabs">
+            <button id="tabMatriceal" class="hw-btn active">1. Matriceal 8-Lanes</button>
+            <button id="tabHarmonizer" class="hw-btn">2. Master Harmonizer &amp; Aux</button>
+            <button id="tabCVRouter" class="hw-btn">3. 8-CV Matrix &amp; 64-Track Router</button>
+          </div>
+          <span id="screenModeStatus" class="status-pill">MODE: MATRICEAL | ROW: GATE</span>
+        </div>
+
+        <!-- Screen View 1: 8 Polymetric Lanes -->
+        <div id="viewMatriceal" class="lane-grid"></div>
+
+        <!-- Screen View 2: Master Harmonizer, Turing Shift Register & Accumulator -->
+        <div id="viewHarmonizer" class="info-grid-2" style="display:none;">
+          <div class="info-box">
+            <div class="section-title">Enhancement 2: Master Harmonizer Bus (Track 1 -> 63 Followers)</div>
+            <div id="harmSummaryText" style="font-family:monospace; color:#00f0ff;"></div>
+            <div style="font-size:11px; color:#939eae;">
+              Turn Macro Knobs A–D to morph Chord Voicing Spread, Inversion, Borrowed Modal Interchange, and 960-PPQN Strum Timing in real time.
+            </div>
+          </div>
+          <div class="info-box">
+            <div class="section-title">Enhancement 3 &amp; 4: Turing Shift Register &amp; Step Accumulators</div>
+            <div id="turingSummaryText" style="font-family:monospace; color:#ffae00;"></div>
+            <div id="accumSummaryText" style="font-family:monospace; color:#00e676;"></div>
+          </div>
+        </div>
+
+        <!-- Screen View 3: 8-Channel 48 kHz Modular CV Matrix & Unified Router -->
+        <div id="viewCVRouter" style="display:none; flex-direction:column; gap:10px;">
+          <div class="section-title">Enhancement 7: 8-Channel 48 kHz Calibrated CV Modulation Matrix (CV 1–8)</div>
+          <div id="cvMetersContainer" class="cv-meter-grid"></div>
+          <div class="info-box">
+            <div class="section-title">Enhancement 9: Unified 64-Track MIDI DIN (1–5) / USB Host (1–5) / Poly CV / Ableton Link</div>
+            <div id="routerSummaryText" style="font-family:monospace; color:#00f0ff;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Hardware Control Surface: 8 LED-Ring Macro Knobs A-H, ROW/BAR, AI Camera -->
+      <div class="right-control-deck">
+        <div class="section-title">
+          <span>Physical Control Mode (StepEnc 1–16 &amp; Knobs A–H)</span>
+        </div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button id="modeBtnMatriceal" class="hw-btn active-cyan">Matriceal Lanes</button>
+          <button id="modeBtnEuclidean" class="hw-btn">Euclidean + Pad Overrides</button>
+          <button id="modeBtnStochastic" class="hw-btn">Stochastic / Turing</button>
+          <button id="modeBtnAccumulator" class="hw-btn">Step Accumulator</button>
+        </div>
+
+        <div class="section-title">
+          <span>8 Assignable LED-Ring Macro Knobs (Knobs A–H)</span>
+        </div>
+        <div id="macroKnobsContainer" class="macro-knobs-grid"></div>
+
+        <div class="nav-and-tof-row">
+          <div class="info-box">
+            <div class="section-title">ROW &amp; BAR Encoders</div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <button id="btnRowPrev" class="hw-btn">ROW ▲</button>
+              <button id="btnRowNext" class="hw-btn">ROW ▼</button>
+              <button id="btnResetPlayheads" class="hw-btn">RESET PHASE</button>
+            </div>
+            <div id="dualProjStatus" style="font-size:11px; font-family:monospace; color:#ffae00;">
+              DUAL-PROJ MORPH: 0% (Proj A 120 BPM)
+            </div>
+          </div>
+          <div id="tofSensorPad" class="tof-pad">
+            <div style="font-size:11px; font-weight:800; color:#00f0ff;">VL53L5CX AI CAMERA</div>
+            <div id="tofReadout" style="font-size:11px; font-family:monospace; color:#eef2f7;">
+              Z: 250 mm | X-Tilt: 0.0°
+            </div>
+            <div style="font-size:10px; color:#939eae;">Move cursor to modulate Optical CV</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom 16-Step Matrix: 16 Per-Step Encoders + 16 RGB Step Buttons -->
+    <div class="step-matrix-section">
+      <div class="section-title">
+        <span id="matrixHeaderTitle">16 Per-Step Rotary Encoders (StepEnc 1–16) &amp; 16 RGB Step Pads (Steps 1–16)</span>
+        <span style="color:var(--accent-cyan); font-family:monospace;">Cyan = Forced-On | Dim Red = Forced-Mute | Green/Amber = Active Step</span>
+      </div>
+      <div id="stepColumnsContainer" class="step-columns-16"></div>
+    </div>
+  </div>
+
+  <script nonce="ignite2026">
+    (function () {
+      "use strict";
+
+      const NUM_TRACKS = 64;
+      const NUM_STEPS = 16;
+      const PPQN = 960;
+      const TICKS_PER_16TH = 240;
+
+      const LANE_NAMES = [
+        "1. Gate",
+        "2. Pitch (Semi)",
+        "3. Velocity",
+        "4. Octave",
+        "5. Glide/Len %",
+        "6. Ratchet (1-8x)",
+        "7. Prob %",
+        "8. Mod CV/CC"
+      ];
+
+      const KNOB_META = [
+        { code: "A", label: "Spread / Euc N", val: 127 },
+        { code: "B", label: "Inversion / Euc K", val: 36 },
+        { code: "C", label: "Modal / Euc Rot", val: 0 },
+        { code: "D", label: "Strum / Euc Acc", val: 24 },
+        { code: "E", label: "Turing Lock %", val: 0 },
+        { code: "F", label: "Turing Len (1-16)", val: 64 },
+        { code: "G", label: "Swing (50-75%)", val: 0 },
+        { code: "H", label: "Proj A/B Morph", val: 0 }
+      ];
+
+      // Create 64 tracks in browser memory
+      const tracks = [];
+      for (let t = 0; t < NUM_TRACKS; t++) {
+        const defaultGates = new Array(NUM_STEPS).fill(0);
+        if (t === 0) {
+          defaultGates[0] = 1; defaultGates[4] = 1; defaultGates[8] = 1; defaultGates[12] = 1;
+        } else if (t === 1) {
+          defaultGates[0] = 1; defaultGates[3] = 1; defaultGates[6] = 1; defaultGates[10] = 1; defaultGates[14] = 1;
+        } else {
+          defaultGates[0] = 1; defaultGates[8] = 1;
+        }
+        tracks.push({
+          baseNote: t === 0 ? 48 : 60,
+          followMode: t === 0 ? 0 : 2,
+          laneLengths: [16, 8, 12, 16, 16, 16, 16, 16],
+          lanePlayheads: [0, 0, 0, 0, 0, 0, 0, 0],
+          lanes: [
+            defaultGates,
+            [0, 3, 7, 10, 0, 5, 7, 12, 0, 3, 7, 10, 0, 5, 7, 12],
+            new Array(NUM_STEPS).fill(105),
+            new Array(NUM_STEPS).fill(0),
+            new Array(NUM_STEPS).fill(75),
+            new Array(NUM_STEPS).fill(1),
+            new Array(NUM_STEPS).fill(100),
+            new Array(NUM_STEPS).fill(64)
+          ],
+          accumDeltas: new Array(NUM_STEPS).fill(0),
+          accumOffsets: new Array(NUM_STEPS).fill(0),
+          stochasticWeights: [85, 0, 55, 65, 0, 60, 0, 80, 0, 50, 65, 0, 20, 10, 15, 20],
+          eucOverride: new Array(NUM_STEPS).fill(0) // 0=Auto, 1=ForcedOn(Cyan), 2=ForcedMute(Red)
+        });
+      }
+
+      let activeTrackIdx = 0;
+      let activeRowIdx = 0;
+      let controlMode = "matriceal"; // "matriceal" | "euclidean" | "stochastic" | "accumulator"
+      let holdBarActive = false;
+      let isPlaying = false;
+      let currentTick960 = 0;
+      let stepCounter = 0;
+      let turingShiftReg = 0xACE1;
+      let tofZDistanceMm = 250;
+      let tofXTiltDeg = 0.0;
+      let audioCtx = null;
+      let timerId = null;
+
+      // Bjorklund Euclidean helper
+      function computeEuclideanBit(step, k, n, rot) {
+        if (n <= 0 || k <= 0) return 0;
+        if (k >= n) return 1;
+        const unrotated = ((step - rot) % n + n) % n;
+        return ((unrotated * k) % n) < k ? 1 : 0;
+      }
+
+      function getEuclideanParams() {
+        const n = Math.max(1, Math.min(16, 1 + Math.floor((KNOB_META[0].val * 15) / 127)));
+        const k = Math.max(0, Math.min(n, Math.floor((KNOB_META[1].val * n) / 127)));
+        const rot = Math.max(0, Math.min(n - 1, Math.floor((KNOB_META[2].val * Math.max(1, n - 1)) / 127)));
+        const acc = Math.max(0, Math.min(n, Math.floor((KNOB_META[3].val * n) / 127)));
+        return { n: n, k: k, rot: rot, acc: acc };
+      }
+
+      function getMasterChordNotes() {
+        const base = [60, 64, 67, 71];
+        const modal = KNOB_META[2].val;
+        if (modal >= 64) {
+          base[1] = 63; // Minor 3rd borrowed
+          base[3] = 70; // Minor 7th
+        }
+        const inv = Math.floor((KNOB_META[1].val * 3) / 127);
+        for (let i = 0; i < inv; i++) {
+          base[i] += 12;
+        }
+        const spread = Math.floor((KNOB_META[0].val * 3) / 127);
+        if (spread >= 2) {
+          base[2] += 12;
+        }
+        return base;
+      }
+
+      function harmonizeNote(rawNote, followMode) {
+        const chord = getMasterChordNotes();
+        if (followMode === 0) return rawNote;
+        if (followMode === 3) return (rawNote % 12 === 7) ? 43 : 36;
+        const octBase = Math.floor(rawNote / 12) * 12;
+        let best = chord[0];
+        let bestDist = 999;
+        for (let i = 0; i < chord.length; i++) {
+          const pc = chord[i] % 12;
+          const cand = octBase + pc;
+          const d = Math.abs(cand - rawNote);
+          if (d < bestDist) {
+            bestDist = d;
+            best = cand;
+          }
+        }
+        return Math.max(24, Math.min(108, best));
+      }
+
+      // WebAudio 4-Op FM / KICK Drum / Granular synthesizer
+      function triggerWebAudioVoice(midiNote, velocity, ratchets) {
+        if (!audioCtx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (!AudioContextClass) return;
+          audioCtx = new AudioContextClass();
+        }
+        if (audioCtx.state === "suspended") {
+          audioCtx.resume();
+        }
+        const patch = document.getElementById("selPatch").value;
+        const subTriggers = Math.max(1, Math.min(8, ratchets || 1));
+        const subSpacingSec = 0.11 / subTriggers;
+
+        for (let r = 0; r < subTriggers; r++) {
+          const now = audioCtx.currentTime + r * subSpacingSec;
+          const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
+          const gainNode = audioCtx.createGain();
+          const peakGain = Math.min(0.35, (velocity / 127) * 0.28);
+          gainNode.gain.setValueAtTime(0.0001, now);
+          gainNode.gain.linearRampToValueAtTime(peakGain, now + 0.004);
+          gainNode.gain.exponentialRampToValueAtTime(0.0001, now + (patch === "drum" ? 0.18 : 0.28));
+          gainNode.connect(audioCtx.destination);
+
+          const carrier = audioCtx.createOscillator();
+          const mod = audioCtx.createOscillator();
+          const modGain = audioCtx.createGain();
+
+          if (patch === "drum") {
+            carrier.type = "sine";
+            carrier.frequency.setValueAtTime(freq * 2.4, now);
+            carrier.frequency.exponentialRampToValueAtTime(Math.max(38, freq * 0.5), now + 0.09);
+            mod.frequency.setValueAtTime(freq * 1.5, now);
+            modGain.gain.setValueAtTime(freq * 1.8, now);
+            modGain.gain.exponentialRampToValueAtTime(1.0, now + 0.05);
+          } else if (patch === "granular") {
+            carrier.type = "triangle";
+            carrier.frequency.setValueAtTime(freq, now);
+            mod.type = "sine";
+            mod.frequency.setValueAtTime(freq * 3.01, now);
+            modGain.gain.setValueAtTime(freq * 0.9, now);
+          } else {
+            // 4-Op FM metallic/electric bass-lead
+            carrier.type = "sine";
+            carrier.frequency.setValueAtTime(freq, now);
+            mod.type = "sine";
+            mod.frequency.setValueAtTime(freq * 2.0, now);
+            modGain.gain.setValueAtTime(freq * 2.2, now);
+            modGain.gain.exponentialRampToValueAtTime(freq * 0.25, now + 0.22);
+          }
+
+          mod.connect(modGain);
+          modGain.connect(carrier.frequency);
+          carrier.connect(gainNode);
+
+          mod.start(now);
+          carrier.start(now);
+          mod.stop(now + 0.3);
+          carrier.stop(now + 0.3);
+        }
+      }
+
+      // Initialize Track Selector
+      const selTrack = document.getElementById("selTrack");
+      for (let i = 0; i < NUM_TRACKS; i++) {
+        const opt = document.createElement("option");
+        opt.value = String(i);
+        opt.textContent = "Track " + (i + 1) + (i === 0 ? " (Master Chord)" : "");
+        selTrack.appendChild(opt);
+      }
+
+      // Build 8 Macro Knobs A-H
+      const macroKnobsContainer = document.getElementById("macroKnobsContainer");
+      const knobValLabels = [];
+      for (let k = 0; k < KNOB_META.length; k++) {
+        const card = document.createElement("div");
+        card.className = "knob-card";
+
+        const title = document.createElement("div");
+        title.className = "knob-title";
+        title.textContent = "KNOB " + KNOB_META[k].code + " • " + KNOB_META[k].label;
+
+        const valSpan = document.createElement("div");
+        valSpan.className = "knob-value";
+        valSpan.textContent = String(KNOB_META[k].val);
+        knobValLabels.push(valSpan);
+
+        const slider = document.createElement("input");
+        slider.type = "range";
+        slider.min = "0";
+        slider.max = "127";
+        slider.value = String(KNOB_META[k].val);
+        slider.className = "knob-slider";
+        slider.addEventListener("input", function () {
+          KNOB_META[k].val = Number(slider.value);
+          valSpan.textContent = String(KNOB_META[k].val);
+          renderAllViews();
+        });
+
+        card.appendChild(title);
+        card.appendChild(valSpan);
+        card.appendChild(slider);
+        macroKnobsContainer.appendChild(card);
+      }
+
+      // Build 16 Step Encoders + 16 RGB Step Buttons
+      const stepColumnsContainer = document.getElementById("stepColumnsContainer");
+      const stepEncSliders = [];
+      const stepEncValSpans = [];
+      const stepPadButtons = [];
+
+      for (let s = 0; s < NUM_STEPS; s++) {
+        const col = document.createElement("div");
+        col.className = "step-col";
+
+        const encVal = document.createElement("div");
+        encVal.className = "step-enc-val";
+        encVal.textContent = "0";
+        stepEncValSpans.push(encVal);
+
+        const encInput = document.createElement("input");
+        encInput.type = "range";
+        encInput.min = "-24";
+        encInput.max = "127";
+        encInput.value = "0";
+        encInput.className = "step-enc-input";
+        encInput.addEventListener("input", function () {
+          onStepEncoderChanged(s, Number(encInput.value));
+        });
+        stepEncSliders.push(encInput);
+
+        const padBtn = document.createElement("button");
+        padBtn.className = "rgb-step-pad";
+        padBtn.textContent = String(s + 1);
+        padBtn.addEventListener("click", function () {
+          onStepPadClicked(s);
+        });
+        stepPadButtons.push(padBtn);
+
+        col.appendChild(encVal);
+        col.appendChild(encInput);
+        col.appendChild(padBtn);
+        stepColumnsContainer.appendChild(col);
+      }
+
+      function onStepEncoderChanged(stepIdx, rawVal) {
+        const trk = tracks[activeTrackIdx];
+        if (controlMode === "stochastic") {
+          trk.stochasticWeights[stepIdx] = Math.max(0, Math.min(100, rawVal));
+        } else if (controlMode === "accumulator") {
+          trk.accumDeltas[stepIdx] = Math.max(-12, Math.min(12, rawVal));
+        } else {
+          if (activeRowIdx === 0) {
+            trk.lanes[0][stepIdx] = rawVal > 0 ? 1 : 0;
+          } else if (activeRowIdx === 1) {
+            trk.lanes[1][stepIdx] = Math.max(-24, Math.min(24, rawVal));
+          } else if (activeRowIdx === 2) {
+            trk.lanes[2][stepIdx] = Math.max(1, Math.min(127, rawVal));
+          } else if (activeRowIdx === 3) {
+            trk.lanes[3][stepIdx] = Math.max(-3, Math.min(3, rawVal));
+          } else if (activeRowIdx === 4) {
+            trk.lanes[4][stepIdx] = Math.max(5, Math.min(100, rawVal));
+          } else if (activeRowIdx === 5) {
+            trk.lanes[5][stepIdx] = Math.max(1, Math.min(8, rawVal));
+          } else if (activeRowIdx === 6) {
+            trk.lanes[6][stepIdx] = Math.max(0, Math.min(100, rawVal));
+          } else if (activeRowIdx === 7) {
+            trk.lanes[7][stepIdx] = Math.max(0, Math.min(127, rawVal));
+          }
+        }
+        renderAllViews();
+      }
+
+      function onStepPadClicked(stepIdx) {
+        const trk = tracks[activeTrackIdx];
+        if (holdBarActive) {
+          trk.laneLengths[activeRowIdx] = stepIdx + 1;
+          if (trk.lanePlayheads[activeRowIdx] >= trk.laneLengths[activeRowIdx]) {
+            trk.lanePlayheads[activeRowIdx] = 0;
+          }
+          renderAllViews();
+          return;
+        }
+        if (controlMode === "euclidean") {
+          trk.eucOverride[stepIdx] = (trk.eucOverride[stepIdx] + 1) % 3;
+        } else {
+          trk.lanes[0][stepIdx] = trk.lanes[0][stepIdx] ? 0 : 1;
+        }
+        renderAllViews();
+      }
+
+      // Render Matriceal 8-Lane Touchscreen Grid using safe DOM creation
+      function renderMatricealGrid() {
+        const container = document.getElementById("viewMatriceal");
+        container.replaceChildren();
+        const trk = tracks[activeTrackIdx];
+
+        for (let r = 0; r < LANE_NAMES.length; r++) {
+          const rowEl = document.createElement("div");
+          rowEl.className = "lane-row" + (r === activeRowIdx ? " selected" : "");
+          rowEl.addEventListener("click", function () {
+            activeRowIdx = r;
+            syncStepEncodersToActiveRow();
+            renderAllViews();
+          });
+
+          const lbl = document.createElement("div");
+          lbl.className = "lane-label";
+          lbl.textContent = LANE_NAMES[r];
+
+          const lenBadge = document.createElement("div");
+          lenBadge.className = "lane-len-badge";
+          lenBadge.textContent = "L:" + trk.laneLengths[r];
+
+          rowEl.appendChild(lbl);
+          rowEl.appendChild(lenBadge);
+
+          for (let s = 0; s < NUM_STEPS; s++) {
+            const cell = document.createElement("div");
+            const inLoop = s < trk.laneLengths[r];
+            const isPlayhead = s === trk.lanePlayheads[r];
+            let cls = "lane-cell " + (inLoop ? "in-loop" : "out-of-loop");
+            if (isPlayhead) cls += " playhead";
+            if (r === 0 && trk.lanes[0][s] > 0) cls += " gate-on";
+            cell.className = cls;
+            cell.textContent = String(trk.lanes[r][s]);
+            rowEl.appendChild(cell);
+          }
+          container.appendChild(rowEl);
+        }
+      }
+
+      function syncStepEncodersToActiveRow() {
+        const trk = tracks[activeTrackIdx];
+        for (let s = 0; s < NUM_STEPS; s++) {
+          let min = 0, max = 127, val = 0;
+          if (controlMode === "stochastic") {
+            min = 0; max = 100; val = trk.stochasticWeights[s];
+          } else if (controlMode === "accumulator") {
+            min = -12; max = 12; val = trk.accumDeltas[s];
+          } else {
+            if (activeRowIdx === 0) { min = 0; max = 1; val = trk.lanes[0][s]; }
+            else if (activeRowIdx === 1) { min = -24; max = 24; val = trk.lanes[1][s]; }
+            else if (activeRowIdx === 2) { min = 1; max = 127; val = trk.lanes[2][s]; }
+            else if (activeRowIdx === 3) { min = -3; max = 3; val = trk.lanes[3][s]; }
+            else if (activeRowIdx === 4) { min = 5; max = 100; val = trk.lanes[4][s]; }
+            else if (activeRowIdx === 5) { min = 1; max = 8; val = trk.lanes[5][s]; }
+            else if (activeRowIdx === 6) { min = 0; max = 100; val = trk.lanes[6][s]; }
+            else if (activeRowIdx === 7) { min = 0; max = 127; val = trk.lanes[7][s]; }
+          }
+          stepEncSliders[s].min = String(min);
+          stepEncSliders[s].max = String(max);
+          stepEncSliders[s].value = String(val);
+          stepEncValSpans[s].textContent = String(val);
+        }
+      }
+
+      function renderStepPadsAndSummaries() {
+        const trk = tracks[activeTrackIdx];
+        const euc = getEuclideanParams();
+        const playheadGate = trk.lanePlayheads[0];
+
+        for (let s = 0; s < NUM_STEPS; s++) {
+          const pad = stepPadButtons[s];
+          let cls = "rgb-step-pad";
+          if (controlMode === "euclidean") {
+            const ov = trk.eucOverride[s];
+            const eucBit = s < euc.n ? computeEuclideanBit(s, euc.k, euc.n, euc.rot) : 0;
+            if (ov === 1) cls += " euc-forced-on";
+            else if (ov === 2) cls += " euc-forced-mute";
+            else if (eucBit) cls += " euc-auto";
+          } else {
+            if (trk.lanes[0][s] > 0) cls += " gate-active";
+          }
+          if (s === playheadGate) cls += " current-playhead";
+          pad.className = cls;
+        }
+
+        const morphPct = Math.round((KNOB_META[7].val / 127) * 100);
+        const effBpm = (120 + (KNOB_META[7].val / 127) * 8).toFixed(1);
+        document.getElementById("dualProjStatus").textContent =
+          "DUAL-PROJ MORPH: " + morphPct + "% | BPM: " + effBpm;
+
+        const barNum = Math.floor(stepCounter / 16) + 1;
+        const stepInBar = (stepCounter % 16) + 1;
+        document.getElementById("statusClock").textContent =
+          "TICK: " + currentTick960 + " | BAR: " + barNum + "." + stepInBar + " | BPM: " + effBpm;
+
+        document.getElementById("screenModeStatus").textContent =
+          "MODE: " + controlMode.toUpperCase() + " | ROW: " + LANE_NAMES[activeRowIdx];
+
+        const chordNotes = getMasterChordNotes();
+        document.getElementById("harmSummaryText").textContent =
+          "Active Master Chord MIDI: [" + chordNotes.join(", ") + "] | Strum: " +
+          Math.round((KNOB_META[3].val / 127) * 240) + " ticks @ 960 PPQN";
+
+        const lockPct = Math.round((KNOB_META[4].val / 127) * 100);
+        const loopLen = 1 + Math.floor((KNOB_META[5].val * 15) / 127);
+        document.getElementById("turingSummaryText").textContent =
+          "16-Bit Turing Shift Reg: 0x" + turingShiftReg.toString(16).toUpperCase() +
+          " | Lock: " + lockPct + "% | Loop: " + loopLen + " steps";
+
+        document.getElementById("accumSummaryText").textContent =
+          "Step Accumulator Deltas: [" + trk.accumDeltas.slice(0, 8).join(", ") + " ...] semitones";
+
+        renderCVMatrix();
+      }
+
+      function renderCVMatrix() {
+        const container = document.getElementById("cvMetersContainer");
+        container.replaceChildren();
+        const cvModes = [
+          "CV1: 1V/Oct Pitch",
+          "CV2: Hz/V Korg",
+          "CV3: 960-PPQN LFO",
+          "CV4: Looping AD Env",
+          "CV5: Smooth S&H",
+          "CV6: AI Cam Z-Dist",
+          "CV7: AI Cam X-Tilt",
+          "CV8: Project Morph"
+        ];
+        const normVals = [
+          0.5,
+          0.42,
+          0.5 + 0.5 * Math.sin(currentTick960 / 150),
+          (stepCounter % 4 === 0) ? 0.85 : 0.25,
+          ((turingShiftReg & 0xFF) / 255),
+          Math.max(0, Math.min(1, 1 - (tofZDistanceMm - 20) / 980)),
+          (tofXTiltDeg + 45) / 90,
+          KNOB_META[7].val / 127
+        ];
+
+        for (let i = 0; i < 8; i++) {
+          const card = document.createElement("div");
+          card.className = "cv-card";
+
+          const title = document.createElement("div");
+          title.style.fontSize = "11px";
+          title.style.fontWeight = "700";
+          title.textContent = cvModes[i];
+
+          const volts = (normVals[i] * 10).toFixed(2);
+          const dac = Math.round(normVals[i] * 65535);
+          const sub = document.createElement("div");
+          sub.style.fontSize = "10px";
+          sub.style.fontFamily = "monospace";
+          sub.style.color = "#00f0ff";
+          sub.textContent = volts + "V | DAC: " + dac;
+
+          const barOut = document.createElement("div");
+          barOut.className = "cv-bar-outer";
+          const barIn = document.createElement("div");
+          barIn.className = "cv-bar-inner";
+          barIn.style.width = Math.round(normVals[i] * 100) + "%";
+          barOut.appendChild(barIn);
+
+          card.appendChild(title);
+          card.appendChild(sub);
+          card.appendChild(barOut);
+          container.appendChild(card);
+        }
+
+        document.getElementById("routerSummaryText").textContent =
+          "DIN Ports 1–5 (80 ch) + USB Host 1–5 (80 ch) + Poly CV Pool (CV 1–4) + Wi-Fi Ableton Link: ACTIVE";
+      }
+
+      function renderAllViews() {
+        renderMatricealGrid();
+        syncStepEncodersToActiveRow();
+        renderStepPadsAndSummaries();
+      }
+
+      // Sequencer Step Engine
+      function advanceSequencerStep() {
+        const trk = tracks[activeTrackIdx];
+        const euc = getEuclideanParams();
+        const gateStep = trk.lanePlayheads[0];
+
+        let trig = trk.lanes[0][gateStep] > 0;
+        if (controlMode === "euclidean") {
+          const rawEuc = computeEuclideanBit(gateStep % euc.n, euc.k, euc.n, euc.rot) === 1;
+          const ov = trk.eucOverride[gateStep];
+          trig = (ov === 1) || (ov === 0 && rawEuc);
+        }
+
+        // Advance Turing shift register
+        const lockProb = KNOB_META[4].val / 127;
+        const bit = ((turingShiftReg >> 15) ^ (Math.random() > lockProb ? 1 : 0)) & 1;
+        turingShiftReg = ((turingShiftReg << 1) | bit) & 0xFFFF;
+
+        const probPct = trk.lanes[6][trk.lanePlayheads[6]];
+        if (Math.random() * 100 > probPct) {
+          trig = false;
+        }
+
+        if (trig) {
+          const pitchStep = trk.lanePlayheads[1];
+          const velStep = trk.lanePlayheads[2];
+          const octStep = trk.lanePlayheads[3];
+          const ratchStep = trk.lanePlayheads[5];
+
+          trk.accumOffsets[gateStep] = ((trk.accumOffsets[gateStep] + trk.accumDeltas[gateStep] + 12) % 25) - 12;
+          const rawNote = trk.baseNote + trk.lanes[1][pitchStep] + (trk.lanes[3][octStep] * 12) + trk.accumOffsets[gateStep];
+          const finalNote = harmonizeNote(rawNote, trk.followMode);
+          const velocity = trk.lanes[2][velStep];
+          const ratchets = trk.lanes[5][ratchStep];
+          triggerWebAudioVoice(finalNote, velocity, ratchets);
+        }
+
+        // Advance all 8 independent polymetric lanes
+        for (let r = 0; r < 8; r++) {
+          trk.lanePlayheads[r] = (trk.lanePlayheads[r] + 1) % trk.laneLengths[r];
+        }
+
+        currentTick960 += TICKS_PER_16TH;
+        stepCounter++;
+        renderAllViews();
+      }
+
+      // Wire UI Buttons & Tabs
+      document.getElementById("btnPlayStop").addEventListener("click", function () {
+        isPlaying = !isPlaying;
+        const btn = document.getElementById("btnPlayStop");
+        btn.className = isPlaying ? "hw-btn active" : "hw-btn";
+        if (isPlaying) {
+          advanceSequencerStep();
+          timerId = window.setInterval(advanceSequencerStep, 125);
+        } else if (timerId !== null) {
+          window.clearInterval(timerId);
+          timerId = null;
+        }
+      });
+
+      document.getElementById("btnHoldBar").addEventListener("click", function () {
+        holdBarActive = !holdBarActive;
+        document.getElementById("btnHoldBar").className = holdBarActive ? "hw-btn active" : "hw-btn";
+      });
+
+      selTrack.addEventListener("change", function () {
+        activeTrackIdx = Number(selTrack.value);
+        document.getElementById("selFollowMode").value = String(tracks[activeTrackIdx].followMode);
+        renderAllViews();
+      });
+
+      document.getElementById("selFollowMode").addEventListener("change", function (e) {
+        tracks[activeTrackIdx].followMode = Number(e.target.value);
+      });
+
+      function setScreenTab(tabName) {
+        document.getElementById("viewMatriceal").style.display = tabName === "matriceal" ? "flex" : "none";
+        document.getElementById("viewHarmonizer").style.display = tabName === "harmonizer" ? "grid" : "none";
+        document.getElementById("viewCVRouter").style.display = tabName === "cv" ? "flex" : "none";
+        document.getElementById("tabMatriceal").className = tabName === "matriceal" ? "hw-btn active" : "hw-btn";
+        document.getElementById("tabHarmonizer").className = tabName === "harmonizer" ? "hw-btn active" : "hw-btn";
+        document.getElementById("tabCVRouter").className = tabName === "cv" ? "hw-btn active" : "hw-btn";
+      }
+
+      document.getElementById("tabMatriceal").addEventListener("click", function () { setScreenTab("matriceal"); });
+      document.getElementById("tabHarmonizer").addEventListener("click", function () { setScreenTab("harmonizer"); });
+      document.getElementById("tabCVRouter").addEventListener("click", function () { setScreenTab("cv"); });
+
+      function setControlModeUI(mode) {
+        controlMode = mode;
+        document.getElementById("modeBtnMatriceal").className = mode === "matriceal" ? "hw-btn active-cyan" : "hw-btn";
+        document.getElementById("modeBtnEuclidean").className = mode === "euclidean" ? "hw-btn active-cyan" : "hw-btn";
+        document.getElementById("modeBtnStochastic").className = mode === "stochastic" ? "hw-btn active-cyan" : "hw-btn";
+        document.getElementById("modeBtnAccumulator").className = mode === "accumulator" ? "hw-btn active-cyan" : "hw-btn";
+        renderAllViews();
+      }
+
+      document.getElementById("modeBtnMatriceal").addEventListener("click", function () { setControlModeUI("matriceal"); });
+      document.getElementById("modeBtnEuclidean").addEventListener("click", function () { setControlModeUI("euclidean"); });
+      document.getElementById("modeBtnStochastic").addEventListener("click", function () { setControlModeUI("stochastic"); });
+      document.getElementById("modeBtnAccumulator").addEventListener("click", function () { setControlModeUI("accumulator"); });
+
+      document.getElementById("btnRowPrev").addEventListener("click", function () {
+        activeRowIdx = (activeRowIdx + 7) % 8;
+        renderAllViews();
+      });
+      document.getElementById("btnRowNext").addEventListener("click", function () {
+        activeRowIdx = (activeRowIdx + 1) % 8;
+        renderAllViews();
+      });
+      document.getElementById("btnResetPlayheads").addEventListener("click", function () {
+        tracks[activeTrackIdx].lanePlayheads.fill(0);
+        renderAllViews();
+      });
+
+      const tofPad = document.getElementById("tofSensorPad");
+      tofPad.addEventListener("mousemove", function (e) {
+        const rect = tofPad.getBoundingClientRect();
+        const normX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const normY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+        tofZDistanceMm = Math.round(20 + normY * 980);
+        tofXTiltDeg = Number(((normX - 0.5) * 90).toFixed(1));
+        document.getElementById("tofReadout").textContent =
+          "Z: " + tofZDistanceMm + " mm | X-Tilt: " + tofXTiltDeg + "°";
+        renderCVMatrix();
+      });
+
+      renderAllViews();
+    })();
+  </script>
+</body>
+</html>
